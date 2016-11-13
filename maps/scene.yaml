@@ -1,0 +1,223 @@
+sources:
+    osm:
+        type: TopoJSON
+        # url:  https://vector.mapzen.com/osm/all/{z}/{x}/{y}.topojson?api_key=vector-tiles-HqUVidw
+        url:  https://vector.mapzen.com/osm/all/{z}/{x}/{y}.topojson?api_key=mapzen-AbkAcEg
+        max_zoom: 16
+
+cameras:
+    perspective:
+        type: perspective
+        # focal_length: 1
+        focal_length: [[16, 2], [17, 2.5], [18, 3], [19, 4], [20, 6]] # pairs of [zoom, focal len]
+        vanishing_point: [-250, -250] # relative to center of screen, in pixels
+    isometric:
+        type: isometric
+        axis: [0,1]
+
+lights:
+    key:
+        type: directional
+        direction: [-.2, 1, -1]
+        diffuse: 1
+        ambient: .6
+    # key:
+    #     visible: true
+    #     type: point
+    #     position: [-74.0170, 40.7031, 100]
+    #     origin: world
+    #     ambient: .3
+    #     diffuse: 1
+    #     specular: .2
+
+styles:
+    water:
+        base: polygons
+        animated: true
+        shaders:
+            defines:
+                EFFECT_NOISE_ANIMATED: true
+            blocks:
+                global:
+                    url: shaders/glsl-noise-periodic-3d.glsl
+                color:
+                    url: shaders/noise.glsl
+
+    rainbow:
+        base: polygons
+        animated: true
+        shaders:
+            blocks:
+                global: |
+                    // hue-saturation-value to RGB color space converter, to allow hue cycling
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+                color: |
+                    // set an hsv value with hue varied by z-position (aka height) and by time
+                    // then convert to rgb and set pixel color
+                    vec3 c = vec3(worldPosition().z * .003 + u_time / 10., 1.0, 1.0);
+                    color.rgb = hsv2rgb(c);
+
+    popup:
+        url: styles/popup.yaml
+
+    elevator:
+        base: polygons
+        animated: true
+        shaders:
+            blocks:
+                position: |
+                    // Elevator buildings
+                    if (position.z > 0.01) {
+                        position.z *= (sin(position.z + u_time) + 1.0);
+                    }
+
+    breathe:
+        url: styles/breathe.yaml
+
+    dots:
+        url: styles/dots.yaml
+
+    halftone:
+        url: styles/halftone.yaml
+
+    colorhalftone:
+        url: styles/halftone.yaml
+
+    windows:
+        url: styles/windows.yaml
+
+layers:
+    earth:
+        data:
+            source: osm
+            layer: earth
+        draw:
+            polygons:
+                order: function() { return feature.sort_key; }
+                color: [0.175, 0.175, 0.175]
+
+    landuse:
+        data:
+            source: osm
+            layer: landuse
+        draw:
+            polygons:
+                order: function() { return feature.sort_key; }
+                color: [0.5, 0.875, 0.5]
+        pitch:
+            filter:
+                kind: ['pitch', 'garden', 'playground']
+            draw:
+                polygons:
+                    color: [0.3, 0.675, 0.3]
+
+    water:
+        data:
+            source: osm
+            layer: water
+        draw:
+            polygons:
+                order: function() { return feature.sort_key; }
+                color: '#003366'
+        outline:
+            # don't draw outlines on ocean or riverbank features
+            filter: {not: {kind: [ocean, river, riverbank]}}
+            draw:
+                lines:
+                    color: [0.6, 0.6, 0.975]
+                    order: function() { return feature.sort_key; }
+                    width: function () {
+                            return (
+                                $zoom >= 16 && (2.5 * Math.log($zoom))
+                            );
+                        }
+
+    roads:
+        data:
+            source: osm
+            layer: roads
+        draw:
+            lines:
+                order: function () { return feature.sort_key; }
+                outline:
+                    color: [0.7, 0.7, 0.7]
+                    width: 1
+        highway:
+            filter: { kind: highway }
+            draw:
+                lines:
+                    color: [1.0, 1.0, 1.0]
+                    width: 9
+            tunnel:
+                filter: { is_tunnel: yes }
+                draw:
+                    lines:
+                        color: '#333'
+                        width: 6
+                        outline:
+                            order: 352 # magic number
+                            color: white
+                            width: 1
+        major_road:
+            filter: { kind: major_road }
+            draw:
+                lines:
+                    color: [0.5, 0.5, 0.5]
+                    width: 5
+        minor_road:
+            filter: { kind: minor_road }
+            draw:
+                lines:
+                    color: [0.65, 0.65, 0.65]
+                    width: 4
+        path:
+            filter:
+               kind: path
+            draw:
+                lines:
+                    color: [0.8, 0.8, 0.8]
+                    width: 3
+        rail:
+            filter:
+                kind: rail
+                not: { is_tunnel: yes }
+            draw:
+                lines:
+                    color: [0.5, 0.0, 0.0]
+                    width: 3
+                    outline:
+                        order: 352 # magic number
+                        width: .5
+
+    buildings:
+        data:
+            source: osm
+            layer: buildings
+        draw:
+            polygons:
+                order: function() { return feature.sort_key; }
+                color: [.6, .6, .6]
+                # at z15, only extrude buildings over 20 m; at z16 and higher, extrude all buildings
+                extrude: function () { return (($zoom >= 15 && feature.height > 20) || $zoom >= 16) }
+        # buildings with a name only
+        namedBuildings:
+            filter: { name: true }
+            draw:
+                polygons:
+                    color: [.6, .2, .2]
+            # buildings with a name and a kind
+            namedKindBuildings:
+                filter: { kind: true }
+                draw:
+                    polygons:
+                        color: [.6, .2, .6]
+        # buildings with a kind only
+        kindBuildings:
+            filter: { name: false, kind: true }
+            draw:
+                polygons:
+                    color: [.2, .2, .6]
