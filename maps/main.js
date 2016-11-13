@@ -150,6 +150,7 @@ map = (function () {
         // Scene initialized
         layer.on('init', function() {
             // addGUI();
+            // scene.setActiveCamera('isometric');
         });
         layer.addTo(map);
 
